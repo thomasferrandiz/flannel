@@ -208,5 +208,5 @@ jobs:
           files: |
             dist/flanneld-*
             dist/*.tar.gz
-            dist/*.docker
+          files: dist/*.docker
 
