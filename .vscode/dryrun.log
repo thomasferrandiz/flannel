@@ -1,9 +1,0 @@
-make: Entering directory `/Users/tferrandiz/Documents/github/thomasferrandiz/flannel'
-rm -f dist/flanneld*
-rm -f dist/*.aci
-rm -f dist/*.docker
-rm -f dist/*.tar.gz
-rm -f dist/qemu-*
- 
-make: Leaving directory `/Users/tferrandiz/Documents/github/thomasferrandiz/flannel'
- 
