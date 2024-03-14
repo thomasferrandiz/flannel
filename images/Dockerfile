@@ -11,13 +11,17 @@ WORKDIR /build
 RUN mkdir dist
 RUN xx-info env
 RUN go mod download
+# clone iptables-wrapper before forking for each TARGETPLATFORM
+# note: iptables-wrapper does not have any dependencies to download
+RUN git clone https://github.com/kubernetes-sigs/iptables-wrappers.git /iptables-wrapper
 ARG TARGETPLATFORM
 RUN xx-go --wrap make dist/flanneld
+RUN xx-verify --static /build/dist/flanneld
 # build iptables-wrapper
-RUN git clone https://github.com/kubernetes-sigs/iptables-wrappers.git /iptables-wrapper
 WORKDIR /iptables-wrapper
 RUN git checkout 5792812d9e5a5bb7f22d79d557bbfeece253343d
 RUN xx-go --wrap make build
+RUN xx-verify --static /iptables-wrapper/bin/iptables-wrapper
 
 FROM alpine:20231219
 ARG TARGETPLATFORM
