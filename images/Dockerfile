@@ -3,27 +3,21 @@ FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 FROM --platform=$BUILDPLATFORM golang:alpine AS build
 # copy xx scripts to your build stage
 COPY --from=xx / /
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-ARG TAG
+# ARG BUILDPLATFORM
 RUN apk --no-cache add bash make gcc musl-dev git linux-headers git
 COPY Makefile go.mod go.sum *.go /build/
 COPY pkg /build/pkg
 WORKDIR /build
 RUN mkdir dist
 RUN xx-info env
-RUN make deps
-RUN export GOOS=$(xx-info os) &&\
-    export GOARCH=$(xx-info arch) &&\
-    export ARCH=$(xx-info arch) &&\
-    make dist/flanneld
+RUN go mod download
+ARG TARGETPLATFORM
+RUN xx-go --wrap make dist/flanneld
+# build iptables-wrapper
 RUN git clone https://github.com/kubernetes-sigs/iptables-wrappers.git /iptables-wrapper
 WORKDIR /iptables-wrapper
 RUN git checkout 5792812d9e5a5bb7f22d79d557bbfeece253343d
-RUN export GOOS=$(xx-info os) &&\
-    export GOARCH=$(xx-info arch) &&\
-    export ARCH=$(xx-info arch) &&\
-    make build
+RUN xx-go --wrap make build
 
 FROM alpine:20231219
 RUN apk update && apk upgrade
