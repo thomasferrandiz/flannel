@@ -21,9 +21,9 @@ RUN xx-go --wrap make build
 
 FROM alpine:20231219
 ARG TARGETPLATFORM
-RUN xx-apk update && xx-apk upgrade
-RUN xx-apk add --no-cache iproute2 ca-certificates iptables strongswan iptables-legacy && update-ca-certificates
-RUN xx-apk add wireguard-tools --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community
+RUN apk update && apk upgrade
+RUN apk add --no-cache iproute2 ca-certificates iptables strongswan iptables-legacy && update-ca-certificates
+RUN apk add wireguard-tools --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community
 COPY --from=build /build/dist/flanneld /opt/bin/flanneld
 COPY dist/mk-docker-opts.sh /opt/bin/
 COPY --from=build /iptables-wrapper/iptables-wrapper-installer.sh /
