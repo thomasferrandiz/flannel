@@ -157,6 +157,7 @@ test_vxlan() {
     prepare_test vxlan
     pings
     check_iptables
+    check_ip6tables_absent
     delete-flannel
     check_iptables_removed
 }
@@ -165,6 +166,7 @@ test_vxlan_nft() {
     prepare_test vxlan true
     pings
     check_nftables
+    check_nftables6_absent
     delete-flannel
     check_nftables_removed
 }
@@ -173,6 +175,7 @@ test_wireguard() {
     prepare_test wireguard
     pings
     check_iptables
+    check_ip6tables_absent
     delete-flannel
     check_iptables_removed
 }
@@ -181,6 +184,7 @@ test_host-gw() {
     prepare_test host-gw
     pings
     check_iptables
+    check_ip6tables_absent
     delete-flannel
     check_iptables_removed
 }
@@ -190,6 +194,7 @@ test_udp() {
     prepare_test udp
     pings
     check_iptables
+    check_ip6tables_absent
     delete-flannel
     check_iptables_removed
 }
@@ -199,6 +204,7 @@ test_ipip() {
     prepare_test ipip
     pings
     check_iptables
+    check_ip6tables_absent
     delete-flannel
     check_iptables_removed
 }
@@ -287,8 +293,6 @@ $(docker exec --privileged local-leader /usr/sbin/iptables -t filter -S FLANNEL-
 }
 
 check_iptables_removed() {
-  local worker_podcidr=$(get_pod_cidr local-worker)
-  local leader_pod_cidr=$(get_pod_cidr local-leader)
   read -r -d '' POSTROUTING_RULES_WORKER << EOM
 -N FLANNEL-POSTRTG
 EOM
@@ -314,6 +318,18 @@ $(docker exec --privileged local-worker /usr/sbin/iptables -t filter -S FLANNEL-
   assert_equals "$FORWARD_RULES" \
                 "$(docker exec --privileged local-leader /usr/sbin/iptables -t filter -S FORWARD)
 $(docker exec --privileged local-leader /usr/sbin/iptables -t filter -S FLANNEL-FWD)" "Host 2 has not expected forward rules"
+}
+
+# assert that no ipv6 rules were created when running in ipv4-only mode
+check_ip6tables_absent() {
+read -r -d '' POSTROUTING_RULES << EOM
+ip6tables: No chain/target/match by that name.
+EOM
+  assert_equals "$POSTROUTING_RULES" \
+                "$(docker exec --privileged local-worker /usr/sbin/ip6tables -t nat -S POSTROUTING | grep FLANNEL)$(docker exec --privileged local-worker /usr/sbin/ip6tables -t nat -S FLANNEL-POSTRTG)" "Host 1 has not expected postrouting rules"
+  assert_equals "$POSTROUTING_RULES" \
+                "$(docker exec --privileged local-leader /usr/sbin/ip6tables -t nat -S POSTROUTING | grep FLANNEL)$(docker exec --privileged local-leader /usr/sbin/ip6tables -t nat -S FLANNEL-POSTRTG)" "Host 1 has not expected postrouting rules"
+
 }
 
 ###nftables
@@ -376,4 +392,16 @@ check_nftables_removed() {
                 "$(docker exec --privileged local-worker /usr/sbin/nft list chain flannel-ipv4 forward)" "Node worker has unexpected forward rules"
   assert_equals "" \
                 "$(docker exec --privileged local-leader /usr/sbin/nft list chain flannel-ipv4 forward)" "Node leader has unexpected forward rules"
+}
+
+check_nftables6_absent() {
+  # check masquerade & forward rules
+  assert_equals "" \
+                "$(docker exec --privileged local-worker /usr/sbin/nft list chain ip6 flannel-ipv6 postrtg)" "Node worker has unexpected postrouting rules"
+  assert_equals "" \
+                "$(docker exec --privileged local-leader /usr/sbin/nft list chain ip6 flannel-ipv6 postrtg)" "Node leader has unexpected postrouting rules"
+  assert_equals "" \
+                "$(docker exec --privileged local-worker /usr/sbin/nft list chain ip6 flannel-ipv6 forward)" "Node worker has unexpected forward rules"
+  assert_equals "" \
+                "$(docker exec --privileged local-leader /usr/sbin/nft list chain ip6 flannel-ipv6 forward)" "Node leader has unexpected forward rules"
 }
