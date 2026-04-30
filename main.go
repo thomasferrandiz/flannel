@@ -52,6 +52,7 @@ import (
 	_ "github.com/flannel-io/flannel/pkg/backend/hostgw"
 	_ "github.com/flannel-io/flannel/pkg/backend/ipip"
 	_ "github.com/flannel-io/flannel/pkg/backend/ipsec"
+	_ "github.com/flannel-io/flannel/pkg/backend/tailscale"
 	_ "github.com/flannel-io/flannel/pkg/backend/tencentvpc"
 	_ "github.com/flannel-io/flannel/pkg/backend/udp"
 	_ "github.com/flannel-io/flannel/pkg/backend/vxlan"
