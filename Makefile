@@ -1,4 +1,4 @@
-.PHONY: test unit-test e2e-test deps cover gofmt gofmt-fix license-check clean tar.gz release buildx-create-builder build-multi-arch release-manifest release-helm
+.PHONY: test unit-test e2e-test tailscale-e2e-test deps cover gofmt gofmt-fix license-check clean tar.gz release buildx-create-builder build-multi-arch release-manifest release-helm
 
 # Registry used for publishing images
 REGISTRY?=quay.io/coreos/flannel
@@ -121,6 +121,10 @@ k3s-e2e-test: bash_unit dist/flanneld-$(TAG)-$(ARCH).docker
 	$(MAKE) -C images/iperf3 ARCH=$(ARCH) || { echo "ERROR: Failed to build iperf3 image for $(ARCH)"; exit 1; }
 	@echo "Running k3s e2e tests..."
 	./bash_unit ./e2e/run-e2e-tests.sh
+
+tailscale-e2e-test: bash_unit dist/flanneld-$(TAG)-$(ARCH).docker
+	@echo "Running Tailscale e2e tests (uses Headscale as control plane)..."
+	./bash_unit ./e2e/tailscale/run-tailscale-e2e-tests.sh
 
 cover:
 	# A single package must be given - e.g. 'PACKAGES=pkg/ip make cover'

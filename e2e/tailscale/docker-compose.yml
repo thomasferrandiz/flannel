@@ -1,0 +1,70 @@
+volumes:
+  headscale-data:
+  kubeconfig:
+    name: tailscale-e2e-kubeconfig
+
+networks:
+  tailscale-e2e:
+    driver: bridge
+
+services:
+  headscale:
+    container_name: tailscale-e2e-headscale
+    image: headscale/headscale:v0.28.0
+    command: serve
+    volumes:
+      - headscale-data:/var/lib/headscale
+      - ./headscale-config.yaml:/etc/headscale/config.yaml:ro
+    networks:
+      - tailscale-e2e
+    ports:
+      - "3478:3478/udp" # STUN for direct Tailscale connections
+    healthcheck:
+      test: ["CMD", "headscale", "version"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  ts-leader:
+    container_name: tailscale-e2e-leader
+    image: "e2e/tailscale/local/k3s"
+    build:
+      context: .
+      args:
+        - ARCH=amd64
+    command: server --disable=traefik,metrics-server --flannel-backend=none --disable-network-policy
+    environment:
+      - K3S_TOKEN=e2e
+      - TS_AUTHKEY=${TS_AUTHKEY}
+    hostname: ts-leader
+    privileged: true
+    networks:
+      - tailscale-e2e
+    ports:
+      - "6443:6443"
+    volumes:
+      - source: kubeconfig
+        target: /etc/rancher/k3s
+        type: volume
+    depends_on:
+      headscale:
+        condition: service_healthy
+
+  ts-worker:
+    container_name: tailscale-e2e-worker
+    image: "e2e/tailscale/local/k3s"
+    build:
+      context: .
+      args:
+        - ARCH=amd64
+    command: agent --server https://ts-leader:6443
+    environment:
+      - K3S_TOKEN=e2e
+      - TS_AUTHKEY=${TS_AUTHKEY}
+    hostname: ts-worker
+    privileged: true
+    networks:
+      - tailscale-e2e
+    depends_on:
+      - ts-leader
