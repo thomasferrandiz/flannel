@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 
 	"github.com/flannel-io/flannel/pkg/backend"
@@ -30,6 +31,7 @@ import (
 	"github.com/vishvananda/netlink"
 	log "k8s.io/klog/v2"
 	"tailscale.com/client/local"
+	"tailscale.com/ipn"
 )
 
 func init() {
@@ -157,6 +159,24 @@ func (be *TailscaleBackend) RegisterNetwork(ctx context.Context, wg *sync.WaitGr
 		return nil, err
 	default:
 		return nil, fmt.Errorf("failed to acquire lease: %w", err)
+	}
+
+	// Advertise the pod CIDR as a Tailscale subnet route so that peers running
+	// with --accept-routes can forward traffic to pods on this node through the
+	// Tailscale tunnel. Without this, tailscaled drops packets whose destination
+	// is a pod IP because no peer has declared it as an AllowedIP.
+	if config.EnableIPv4 {
+		podPrefix, err := netip.ParsePrefix(l.Subnet.ToIPNet().String())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse pod CIDR %v: %w", l.Subnet, err)
+		}
+		if _, err := tsClient.EditPrefs(ctx, &ipn.MaskedPrefs{
+			Prefs:              ipn.Prefs{AdvertiseRoutes: []netip.Prefix{podPrefix}},
+			AdvertiseRoutesSet: true,
+		}); err != nil {
+			return nil, fmt.Errorf("failed to advertise pod CIDR %v via Tailscale: %w", podPrefix, err)
+		}
+		log.Infof("Advertising pod CIDR %v via Tailscale subnet routing", podPrefix)
 	}
 
 	return newNetwork(be.sm, be.extIface, l, mtu, tsLink.Attrs().Index, cfg.InterfaceName)
