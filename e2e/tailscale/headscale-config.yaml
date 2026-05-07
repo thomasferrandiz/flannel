@@ -13,18 +13,61 @@ prefixes:
 
 derp:
   server:
+    # If enabled, runs the embedded DERP server and merges it into the rest of the DERP config
+    # The Headscale server_url defined above MUST be using https, DERP requires TLS to be in place
     enabled: false
+
+    # Region ID to use for the embedded DERP server.
+    # The local DERP prevails if the region ID collides with other region ID coming from
+    # the regular DERP config.
     region_id: 999
-    region_code: headscale
-    region_name: Headscale Embedded DERP
-    stun_listen_addr: 0.0.0.0:3478
+
+    # Region code and name are displayed in the Tailscale UI to identify a DERP region
+    region_code: "headscale"
+    region_name: "Headscale Embedded DERP"
+
+    # Only allow clients associated with this server access
+    verify_clients: true
+
+    # Listens over UDP at the configured address for STUN connections - to help with NAT traversal.
+    # When the embedded DERP server is enabled stun_listen_addr MUST be defined.
+    #
+    # For more details on how this works, check this great article: https://tailscale.com/blog/how-tailscale-works/
+    stun_listen_addr: "0.0.0.0:3478"
+
+    # Private key used to encrypt the traffic between headscale DERP and
+    # Tailscale clients. A missing key will be automatically generated.
     private_key_path: /var/lib/headscale/derp_server_private.key
+
+    # This flag can be used, so the DERP map entry for the embedded DERP server is not written automatically,
+    # it enables the creation of your very own DERP map entry using a locally available file with the parameter DERP.paths
+    # If you enable the DERP server and set this to false, it is required to add the DERP server to the DERP map using DERP.paths
     automatically_add_embedded_derp_region: true
-    ipv4: headscale
-  urls: []
+
+    # For better connection stability (especially when using an Exit-Node and DNS is not working),
+    # it is possible to optionally add the public IPv4 and IPv6 address to the Derp-Map using:
+    ipv4: 198.51.100.1
+  # List of externally available DERP maps encoded in JSON
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+
+  # Locally available DERP map files encoded in YAML
+  #
+  # This option is mostly interesting for people hosting
+  # their own DERP servers:
+  # https://tailscale.com/kb/1118/custom-derp-servers/
+  #
+  # paths:
+  #   - /etc/headscale/derp-example.yaml
   paths: []
-  auto_update_enabled: false
-  update_frequency: 24h
+
+  # If enabled, a worker will be set up to periodically
+  # refresh the given sources and update the derpmap
+  # will be set up.
+  auto_update_enabled: true
+
+  # How often should we check for DERP updates?
+  update_frequency: 3h
 
 disable_check_updates: true
 
@@ -33,9 +76,39 @@ database:
   sqlite:
     path: /var/lib/headscale/db.sqlite
 
+policy:
+  mode: file
+  path: /etc/headscale/policy.json
+
 dns:
-  magic_dns: false
+  magic_dns: true
   base_domain: headscale.local
+  # Whether to use the local DNS settings of a node or override the local DNS
+  # settings (default) and force the use of Headscale's DNS configuration.
+  override_local_dns: true
+
+  # List of DNS servers to expose to clients.
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 1.0.0.1
+      - 2606:4700:4700::1111
+      - 2606:4700:4700::1001
+
+      # NextDNS (see https://tailscale.com/kb/1218/nextdns/).
+      # "abc123" is example NextDNS ID, replace with yours.
+      # - https://dns.nextdns.io/abc123
+
+    # Split DNS (see https://tailscale.com/kb/1054/dns/),
+    # a map of domains and which DNS server to use for each.
+    split: {}
+      # foo.bar.com:
+      #   - 1.1.1.1
+      # darp.headscale.net:
+      #   - 1.1.1.1
+      #   - 8.8.8.8
+  search_domains: []
+  extra_records: []
 
 unix_socket: /var/run/headscale/headscale.sock
 unix_socket_permission: "0770"

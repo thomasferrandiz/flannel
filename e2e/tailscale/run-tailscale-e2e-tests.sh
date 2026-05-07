@@ -18,19 +18,6 @@ setup_suite() {
     cp $(dirname $0)/../../dist/${FLANNEL_IMAGE_FILE}.docker \
        $(dirname $0)/scratch/${FLANNEL_IMAGE_FILE}.tar
 
-    # Generate self-signed TLS cert for headscale DERP relay.
-    # The k3s node image (Dockerfile) copies headscale-ca.pem into the system
-    # trust store so tailscale can verify the DERP server's TLS cert.
-    local CERTS_DIR
-    CERTS_DIR="$(dirname $0)/certs"
-    mkdir -p "${CERTS_DIR}"
-    openssl req -x509 -newkey rsa:2048 \
-        -keyout "${CERTS_DIR}/headscale-server-key.pem" \
-        -out    "${CERTS_DIR}/headscale-server-cert.pem" \
-        -days 1 -nodes -subj '/CN=headscale' \
-        -addext 'subjectAltName=DNS:headscale' 2>/dev/null
-    cp "${CERTS_DIR}/headscale-server-cert.pem" "${CERTS_DIR}/headscale-ca.pem"
-
     pushd $(dirname $0) > /dev/null
 
     # Build node image without cache to ensure the updated flannel binary is used
@@ -49,6 +36,7 @@ setup_suite() {
             --user 1 \
             --reusable \
             --expiration 1h \
+            --tags tag:k8s \
             -o json \
         | jq -r '.key')
 
@@ -224,10 +212,6 @@ debug_connectivity() {
     echo "--- tailscale AllowedIPs (worker) ---"
     docker exec tailscale-e2e-worker tailscale status --json 2>/dev/null \
         | jq '.Peer | to_entries[] | {host: .value.HostName, allowed: .value.AllowedIPs}' 2>/dev/null || true
-    echo "--- tailscale derp-map (leader) ---"
-    docker exec tailscale-e2e-leader tailscale debug derp-map 2>/dev/null || true
-    echo "--- tailscale netcheck (leader) ---"
-    docker exec tailscale-e2e-leader tailscale netcheck 2>/dev/null || true
     echo "--- tailscale ping leader→worker ---"
     docker exec tailscale-e2e-leader tailscale ping -c 3 100.64.0.2 2>/dev/null || true
     echo "--- tailscale ping worker→leader ---"
@@ -237,6 +221,8 @@ debug_connectivity() {
     echo "--- ip route (worker) ---"
     docker exec tailscale-e2e-worker ip route show 2>/dev/null || true
     echo "--- flannel logs (leader) ---"
+
+    docker exec tailscale-e2e-headscale headscale nodes list-routes || true
     local fp
     fp=$(kubectl --kubeconfig="${HOME}/.kube/config" get pods \
         --field-selector "spec.nodeName=ts-leader" -n kube-flannel \
@@ -247,72 +233,6 @@ debug_connectivity() {
         --field-selector "spec.nodeName=ts-worker" -n kube-flannel \
         --no-headers -o custom-columns=":metadata.name" 2>/dev/null | head -1)
     [ -n "$fp" ] && kubectl --kubeconfig="${HOME}/.kube/config" logs "$fp" -n kube-flannel 2>/dev/null || true
-}
-
-approve_headscale_routes() {
-    echo "Waiting for Tailscale subnet routes to appear in Headscale..."
-
-    # Phase 1: poll until at least one node has advertised routes (up to 150 s)
-    local attempts=0 raw=""
-    while [ "$attempts" -lt 30 ]; do
-        raw=$(docker exec tailscale-e2e-headscale \
-            headscale nodes list-routes -o json 2>/dev/null || true)
-        local count
-        count=$(echo "$raw" | jq '[.[] | select((.available_routes // []) | length > 0)] | length' 2>/dev/null || echo "0")
-        if [ "${count:-0}" -gt 0 ]; then
-            echo "Routes found ($count node(s) advertising)"
-            break
-        fi
-        attempts=$((attempts + 1))
-        if [ "$((attempts % 5))" -eq 0 ]; then
-            echo "headscale nodes list-routes: ${raw:-<empty>}"
-            local fp
-            fp=$(kubectl --kubeconfig="${HOME}/.kube/config" get pods \
-                --field-selector "spec.nodeName=ts-worker" -n kube-flannel \
-                --no-headers -o custom-columns=":metadata.name" 2>/dev/null | head -1)
-            if [ -n "$fp" ]; then
-                echo "Flannel logs (ts-worker):"
-                kubectl --kubeconfig="${HOME}/.kube/config" logs "$fp" \
-                    -n kube-flannel --tail=20 2>/dev/null || true
-            fi
-        fi
-        echo "No routes yet (attempt $attempts/30)..."
-        sleep 5
-    done
-
-    if [ "$attempts" -ge 30 ]; then
-        echo "ERROR: no Tailscale subnet routes appeared after 150 s" >&2
-        return 1
-    fi
-
-    # Phase 2: three approval passes spaced 10 s apart to catch all nodes.
-    # We never test enabled_routes because headscale v0.28 doesn't update that
-    # field in list-routes output after approve-routes is called.
-    for pass in 1 2 3; do
-        sleep 10
-        raw=$(docker exec tailscale-e2e-headscale \
-            headscale nodes list-routes -o json 2>/dev/null || true)
-        echo "Approval pass $pass/3:"
-        local found=0
-        while IFS=$'\t' read -r node_id routes; do
-            [ -z "$node_id" ] && continue
-            echo "  node $node_id -> $routes"
-            docker exec tailscale-e2e-headscale \
-                headscale nodes approve-routes \
-                    --identifier "$node_id" \
-                    --routes "$routes" \
-                    --force 2>&1 || true
-            found=$((found + 1))
-        done < <(echo "$raw" | jq -r \
-            '.[] | select((.available_routes // []) | length > 0) |
-             [(.id | tostring), ((.available_routes // []) | join(","))] | @tsv' \
-            2>/dev/null)
-        echo "  approved $found node(s)"
-    done
-
-    echo "Route approval complete; waiting for propagation..."
-    sleep 15
-    return 0
 }
 
 prepare_test() {
@@ -330,8 +250,6 @@ prepare_test() {
         get_pod_logs "$flannel_pod"
         exit $retVal
     fi
-
-    approve_headscale_routes
 
     echo "Forcing direct WireGuard session establishment..."
     for i in $(seq 1 24); do

@@ -67,10 +67,6 @@ RUN set -e -x \
  && rm -rf "/tmp/tailscale_${TAILSCALE_VERSION}_${ARCH}" "/tmp/${TS_TGZ}" \
  && tailscale version
 
-# Trust headscale's self-signed cert (generated in setup_suite before docker build)
-COPY certs/headscale-ca.pem /usr/share/pki/trust/anchors/headscale-ca.pem
-RUN update-ca-certificates
-
 COPY scratch/*.tar /var/lib/rancher/k3s/agent/images/
 
 COPY k3s-entrypoint.sh /usr/local/bin/k3s-entrypoint.sh

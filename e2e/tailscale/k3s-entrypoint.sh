@@ -27,11 +27,10 @@ done
 
 echo "Authenticating to Headscale..."
 tailscale up \
-    --login-server=https://headscale:8080 \
+    --login-server=http://headscale:8080 \
     --authkey="${TS_AUTHKEY}" \
     --hostname="${HOSTNAME}" \
-    --accept-routes \
-    --accept-dns=false
+    --accept-routes 
 
 echo "Waiting for Tailscale Running state..."
 for i in $(seq 1 60); do

@@ -15,6 +15,7 @@ services:
     volumes:
       - headscale-data:/var/lib/headscale
       - ./headscale-config.yaml:/etc/headscale/config.yaml:ro
+      - ./headscale-policy.json:/etc/headscale/policy.json:ro
     networks:
       - tailscale-e2e
     ports:
